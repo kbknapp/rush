@@ -10,22 +10,25 @@
 
 use super::engine;
 
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use regex::Regex;
-use once_cell::sync::Lazy;
 
 // Config can be applied by engine.
 #[derive(Clone)]
 pub struct Config {
     pub apps: HashMap<String, Box<dyn engine::AppArg>>,
-    pub links: HashSet<String>
+    pub links: HashSet<String>,
 }
 
 // API: Create a new configuration.
 // Initially there are no apps or links.
 pub fn new() -> Config {
-    Config { apps: HashMap::new(), links: HashSet::new() }
+    Config {
+        apps: HashMap::new(),
+        links: HashSet::new(),
+    }
 }
 
 // API: Add an app to the configuration.
@@ -61,15 +64,20 @@ pub fn parse_link(spec: &str) -> LinkSpec {
 }
 
 pub struct LinkSpec {
-    pub from: String, pub output: String,
-    pub to: String, pub input: String
+    pub from: String,
+    pub output: String,
+    pub to: String,
+    pub input: String,
 }
 
-static LINK_SYNTAX: Lazy<Regex> = Lazy::new
-    (|| Regex::new(r" *([\w_]+)\.([\w_]+) *-> *([\w_]+)\.([\w_]+) *").unwrap());
+static LINK_SYNTAX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r" *([\w_]+)\.([\w_]+) *-> *([\w_]+)\.([\w_]+) *").unwrap());
 
 fn format_link(spec: &LinkSpec) -> String {
-    format!("{}.{} -> {}.{}", spec.from, spec.output, spec.to, spec.input)
+    format!(
+        "{}.{} -> {}.{}",
+        spec.from, spec.output, spec.to, spec.input
+    )
 }
 
 fn canonical_link(spec: &str) -> String {
@@ -82,13 +90,12 @@ mod tests {
     use crate::basic_apps;
 
     #[test]
-    fn config () {
+    fn config() {
         let mut c = new();
         println!("Created an empty configuration");
-        app(&mut c, "source", &basic_apps::Source {size: 60});
+        app(&mut c, "source", &basic_apps::Source { size: 60 });
         println!("Added an app");
         link(&mut c, "source.output -> sink.input");
         println!("Added an link");
     }
-
 }

@@ -1,7 +1,8 @@
+use crate::link;
 use crate::memory;
 use crate::packet;
-use crate::link;
 
+use std::cmp;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::mem;
@@ -9,7 +10,6 @@ use std::os::unix::io::RawFd;
 use std::ptr;
 use std::thread;
 use std::time::{Duration, Instant};
-use std::cmp;
 
 use super::constants::*;
 // use super::interrupts::*;
@@ -101,7 +101,7 @@ impl IxyDevice for IxgbeDevice {
             num_rx_queues,
             num_tx_queues,
             rx_queues,
-            tx_queues
+            tx_queues,
         };
 
         dev.reset_and_init(pci_addr)?;
@@ -157,12 +157,7 @@ impl IxyDevice for IxgbeDevice {
     }
 
     /// Pushes up to `num_packets` received `Packet`s onto `buffer`.
-    fn rx_batch(
-        &mut self,
-        queue_id: u32,
-        output: &mut link::Link,
-        num_packets: usize,
-    ) -> usize {
+    fn rx_batch(&mut self, queue_id: u32, output: &mut link::Link, num_packets: usize) -> usize {
         let mut rx_index;
         let mut last_rx_index;
         let mut received_packets = 0;
@@ -195,14 +190,15 @@ impl IxyDevice for IxgbeDevice {
 
                 // replace currently used buffer with new buffer (packet)
                 let mut np = packet::allocate();
-                queue.bufs_in_use[rx_index] = &mut *np; mem::forget(np);
+                queue.bufs_in_use[rx_index] = &mut *np;
+                mem::forget(np);
 
                 link::transmit(output, p);
 
                 unsafe {
                     ptr::write_volatile(
                         &mut (*desc).read.pkt_addr as *mut u64,
-                        memory::virtual_to_physical((*queue.bufs_in_use[rx_index]).data.as_ptr())
+                        memory::virtual_to_physical((*queue.bufs_in_use[rx_index]).data.as_ptr()),
                     );
                     ptr::write_volatile(&mut (*desc).read.hdr_addr as *mut u64, 0);
                 }
@@ -249,7 +245,7 @@ impl IxyDevice for IxgbeDevice {
                 unsafe {
                     ptr::write_volatile(
                         &mut (*queue.descriptors.add(cur_index)).read.buffer_addr as *mut u64,
-                        memory::virtual_to_physical(p.data.as_ptr())
+                        memory::virtual_to_physical(p.data.as_ptr()),
                     );
                     ptr::write_volatile(
                         &mut (*queue.descriptors.add(cur_index)).read.cmd_type_len as *mut u32,
@@ -547,7 +543,7 @@ impl IxgbeDevice {
                 unsafe {
                     ptr::write_volatile(
                         &mut (*queue.descriptors.add(i)).read.pkt_addr as *mut u64,
-                        memory::virtual_to_physical(np.data.as_ptr())
+                        memory::virtual_to_physical(np.data.as_ptr()),
                     );
 
                     ptr::write_volatile(
@@ -557,7 +553,8 @@ impl IxgbeDevice {
                 }
 
                 // we need to remember which descriptor entry belongs to which mempool entry
-                queue.bufs_in_use.push(&mut *np); mem::forget(np);
+                queue.bufs_in_use.push(&mut *np);
+                mem::forget(np);
             }
         }
 
@@ -747,9 +744,7 @@ fn clean_tx_queue(queue: &mut IxgbeTxQueue) -> usize {
 
         if (status & IXGBE_ADVTXD_STAT_DD) != 0 {
             for _ in 0..cmp::min(TX_CLEAN_BATCH, queue.bufs_in_use.len()) {
-                packet::free(unsafe {
-                    Box::from_raw(queue.bufs_in_use.pop_front().unwrap())
-                });
+                packet::free(unsafe { Box::from_raw(queue.bufs_in_use.pop_front().unwrap()) });
             }
 
             clean_index = wrap_ring(cleanup_to, queue.num_descriptors);
