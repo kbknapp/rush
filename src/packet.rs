@@ -1,6 +1,6 @@
 use super::engine;
-use super::memory;
 use super::lib;
+use super::memory;
 
 use std::cmp;
 use std::mem;
@@ -17,32 +17,38 @@ use std::mem;
 //   free(Box<Packet>) - return a packet to the freelist
 
 // The maximum amount of payload in any given packet.
-pub const PAYLOAD_SIZE: usize = 1024*10;
+pub const PAYLOAD_SIZE: usize = 1024 * 10;
 
 // Packet of network data, with associated metadata.
 // XXX - should be #[repr(C, packed)], however that would require unsafe{} to
 // access members. Is the memory layout in repr(rust) equivalent?
 pub struct Packet {
     pub length: u16, // data payload length
-    pub data: [u8; PAYLOAD_SIZE]
+    pub data: [u8; PAYLOAD_SIZE],
 }
 
 // A packet may never go out of scope. It is either on the freelist, a link, or
 // in active use (in-scope).
 // XXX - Could free() packets automatically in Drop, and obsolete manual free.
-impl Drop for Packet { fn drop(&mut self) { panic!("Packet leaked"); } }
+impl Drop for Packet {
+    fn drop(&mut self) {
+        panic!("Packet leaked");
+    }
+}
 
 // Allocate a packet struct on the heap (initialized all-zero).
 // NB: Box is how we heap-allocate in Rust.
 fn new_packet() -> Box<Packet> {
-    let base = memory::dma_alloc(mem::size_of::<Packet>(),
-                                 mem::align_of::<Packet>());
+    let base = memory::dma_alloc(mem::size_of::<Packet>(), mem::align_of::<Packet>());
     let mut p = unsafe { Box::from_raw(base as *mut Packet) };
     p.length = 0;
     p
 }
 fn new_packet_noroot() -> Box<Packet> {
-    Box::new(Packet { length: 0, data: [0; PAYLOAD_SIZE] })
+    Box::new(Packet {
+        length: 0,
+        data: [0; PAYLOAD_SIZE],
+    })
 }
 
 // Maximum number of packets on the freelist.
@@ -52,13 +58,13 @@ const MAX_PACKETS: usize = 1_000_000;
 // and a fill counter.
 struct Freelist {
     list: [*mut Packet; MAX_PACKETS],
-    nfree: usize
+    nfree: usize,
 }
 
 // FL: global freelist (initially empty, populated with null ptrs).
 static mut FL: Freelist = Freelist {
     list: [std::ptr::null_mut(); MAX_PACKETS],
-    nfree: 0
+    nfree: 0,
 };
 
 // Fill up FL with freshly allocated packets.
@@ -67,14 +73,16 @@ static mut FL: Freelist = Freelist {
 // NB: use DMA allocator if run as root, regular heap allocator otherwise.
 static mut PACKETS_ALLOCATED: usize = 0;
 static mut PACKET_ALLOCATION_STEP: usize = 1000;
-fn preallocate_step () {
+fn preallocate_step() {
     let new_packet = match unsafe { libc::getuid() } {
         0 => new_packet,
-        _ => new_packet_noroot
+        _ => new_packet_noroot,
     };
     unsafe {
-        assert!(PACKETS_ALLOCATED + PACKET_ALLOCATION_STEP <= MAX_PACKETS,
-                "Packet allocation overflow");
+        assert!(
+            PACKETS_ALLOCATED + PACKET_ALLOCATION_STEP <= MAX_PACKETS,
+            "Packet allocation overflow"
+        );
 
         for _ in 0..PACKET_ALLOCATION_STEP {
             free_internal(new_packet());
@@ -93,7 +101,9 @@ pub fn allocate() -> Box<Packet> {
     if unsafe { FL.nfree == 0 } {
         preallocate_step();
     }
-    unsafe { FL.nfree -= 1; }
+    unsafe {
+        FL.nfree -= 1;
+    }
     unsafe { Box::from_raw(FL.list[FL.nfree]) }
 }
 
@@ -110,12 +120,19 @@ pub fn allocate() -> Box<Packet> {
 // attempt to Drop it will trigger a panic (see Packet). Hence we ensure that
 // all allocated packets are eventually freed.
 fn free_internal(mut p: Box<Packet>) {
-    if unsafe { FL.nfree } == MAX_PACKETS { panic!("Packet freelist overflow"); }
+    if unsafe { FL.nfree } == MAX_PACKETS {
+        panic!("Packet freelist overflow");
+    }
     p.length = 0;
-    unsafe { FL.list[FL.nfree] = &mut *p; } mem::forget(p);
-    unsafe { FL.nfree += 1; }
+    unsafe {
+        FL.list[FL.nfree] = &mut *p;
+    }
+    mem::forget(p);
+    unsafe {
+        FL.nfree += 1;
+    }
 }
-pub fn free (p: Box<Packet>) {
+pub fn free(p: Box<Packet>) {
     engine::add_frees();
     engine::add_freebytes(p.length as u64);
     // Calculate bits of physical capacity required for packet on 10GbE
@@ -127,7 +144,7 @@ pub fn free (p: Box<Packet>) {
 }
 
 // Clone a packet
-pub fn clone (p: &Box<Packet>) -> Box<Packet> {
+pub fn clone(p: &Packet) -> Box<Packet> {
     let mut copy = allocate();
     lib::copy(&mut copy.data, &p.data, p.length as usize);
     copy.length = p.length;
@@ -153,12 +170,13 @@ mod selftest {
         p.length = 1;
         p.data[0] = 42;
         //p.data[100000] = 99; // Would cause compile error
-        println!("Mutating packet (length = {}, data[0] = {})",
-                 p.length, p.data[0]);
+        println!(
+            "Mutating packet (length = {}, data[0] = {})",
+            p.length, p.data[0]
+        );
         let len = p.length;
         free(p); // Not freeing would cause panic
         println!("Freed a packet of length {}", len);
         //p.length = 2; // Would cause compile error
     }
-
 }

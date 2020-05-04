@@ -7,7 +7,7 @@
 //   stats() -> EngineStats - get engine statistics
 //   EngineState - struct representing engine state
 //   state() -> &'static EngineState - get engine state
-//   SharedLink - type for shared links (between apps, also in EngineState)   
+//   SharedLink - type for shared links (between apps, also in EngineState)
 //   AppState - struct representing an app in the current app network
 //   App, AppConfig - traits that defines an app, and its configuration
 //   PULL_NPACKETS - number of packets to be inhaled in app’s pull() methods
@@ -19,33 +19,48 @@
 //   report_load() - print load report
 //   report_links() - print link statistics
 
-use super::link;
 use super::config;
 use super::lib;
+use super::link;
 
+use once_cell::unsync::Lazy;
+use std::cell::RefCell;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
 use std::thread::sleep;
-use std::cmp::min;
-use once_cell::unsync::Lazy;
+use std::time::{Duration, Instant};
 
 // Counters for global engine statistics.
 pub struct EngineStats {
-    pub breaths: u64,  // Total breaths taken
-    pub frees: u64,    // Total packets freed
-    pub freebits: u64, // Total packet bits freed (for 10GbE)
-    pub freebytes: u64 // Total packet bytes freed
+    pub breaths: u64,   // Total breaths taken
+    pub frees: u64,     // Total packets freed
+    pub freebits: u64,  // Total packet bits freed (for 10GbE)
+    pub freebytes: u64, // Total packet bytes freed
 }
 static mut STATS: EngineStats = EngineStats {
-    breaths: 0, frees: 0, freebits: 0, freebytes: 0
+    breaths: 0,
+    frees: 0,
+    freebits: 0,
+    freebytes: 0,
 };
-pub fn add_frees    ()           { unsafe { STATS.frees += 1 } }
-pub fn add_freebytes(bytes: u64) { unsafe { STATS.freebytes += bytes; } }
-pub fn add_freebits (bits: u64)  { unsafe { STATS.freebits += bits; } }
-pub fn stats() -> &'static EngineStats { unsafe { &STATS } }
+pub fn add_frees() {
+    unsafe { STATS.frees += 1 }
+}
+pub fn add_freebytes(bytes: u64) {
+    unsafe {
+        STATS.freebytes += bytes;
+    }
+}
+pub fn add_freebits(bits: u64) {
+    unsafe {
+        STATS.freebits += bits;
+    }
+}
+pub fn stats() -> &'static EngineStats {
+    unsafe { &STATS }
+}
 
 // Global engine state; singleton obtained via engine::init()
 //
@@ -54,15 +69,17 @@ pub struct EngineState {
     pub link_table: HashMap<String, SharedLink>,
     pub app_table: HashMap<String, AppState>,
     pub inhale: Vec<String>,
-    pub exhale: Vec<String>
+    pub exhale: Vec<String>,
 }
-static mut STATE: Lazy<EngineState> = Lazy::new(
-    || EngineState { app_table: HashMap::new(),
-                     link_table: HashMap::new(),
-                     inhale: Vec::new(),
-                     exhale: Vec::new() }
-);
-pub fn state() -> &'static EngineState { unsafe { &STATE } }
+static mut STATE: Lazy<EngineState> = Lazy::new(|| EngineState {
+    app_table: HashMap::new(),
+    link_table: HashMap::new(),
+    inhale: Vec::new(),
+    exhale: Vec::new(),
+});
+pub fn state() -> &'static EngineState {
+    unsafe { &STATE }
+}
 
 // Type for links shared between apps.
 //
@@ -78,7 +95,7 @@ pub struct AppState {
     pub app: Box<dyn App>,
     pub conf: Box<dyn AppArg>,
     pub input: HashMap<String, SharedLink>,
-    pub output: HashMap<String, SharedLink>
+    pub output: HashMap<String, SharedLink>,
 }
 
 // Callbacks that can be implented by apps
@@ -88,14 +105,30 @@ pub struct AppState {
 //         to output links, or peripheral device queues)
 //   stop: stop the app (deinitialize)
 pub trait App {
-    fn has_pull(&self) -> bool { false }
-    fn pull(&self, _app: &AppState) { panic!("Pull called but not implemented"); }
-    fn has_push(&self) -> bool { false }
-    fn push(&self, _app: &AppState) { panic!("Push called but not implemented"); }
-    fn has_report(&self) -> bool { false }
-    fn report(&self) { panic!("Report called but not implemented"); }
-    fn has_stop(&self) -> bool { false }
-    fn stop(&self) { panic!("Stop called but not implemented"); }
+    fn has_pull(&self) -> bool {
+        false
+    }
+    fn pull(&self, _app: &AppState) {
+        panic!("Pull called but not implemented");
+    }
+    fn has_push(&self) -> bool {
+        false
+    }
+    fn push(&self, _app: &AppState) {
+        panic!("Push called but not implemented");
+    }
+    fn has_report(&self) -> bool {
+        false
+    }
+    fn report(&self) {
+        panic!("Report called but not implemented");
+    }
+    fn has_stop(&self) -> bool {
+        false
+    }
+    fn stop(&self) {
+        panic!("Stop called but not implemented");
+    }
 }
 // Recommended number of packets to inhale in pull()
 pub const PULL_NPACKETS: usize = link::LINK_MAX_PACKETS / 10;
@@ -115,10 +148,14 @@ pub trait AppConfig: std::fmt::Debug {
 //
 // Auto-implemented for all implementors of AppConfig.
 pub trait AppArg: AppConfig + AppClone {
-    fn identity(&self) -> String { format!("{}::{:?}", module_path!(), self) }
-    fn equal(&self, y: &dyn AppArg) -> bool { self.identity() == y.identity() }
+    fn identity(&self) -> String {
+        format!("{}::{:?}", module_path!(), self)
+    }
+    fn equal(&self, y: &dyn AppArg) -> bool {
+        self.identity() == y.identity()
+    }
 }
-impl<T: AppConfig + AppClone> AppArg for T { }
+impl<T: AppConfig + AppClone> AppArg for T {}
 
 // We need to be able to copy (clone) AppConfig objects from configurations
 // into the engine state. However, the Rust compiler does not allow
@@ -132,10 +169,14 @@ pub trait AppClone: AppConfig {
     fn box_clone(&self) -> Box<dyn AppArg>;
 }
 impl<T: AppConfig + Clone + 'static> AppClone for T {
-    fn box_clone(&self) -> Box<dyn AppArg> { Box::new((*self).clone()) }
+    fn box_clone(&self) -> Box<dyn AppArg> {
+        Box::new((*self).clone())
+    }
 }
 impl Clone for Box<dyn AppArg> {
-    fn clone(&self) -> Self { (*self).box_clone() }
+    fn clone(&self) -> Self {
+        (*self).box_clone()
+    }
 }
 
 // Configure the running app network to match (new) config.
@@ -155,8 +196,12 @@ pub fn configure(config: &config::Config) {
     for name in apps {
         let old = &state.app_table.get(&name).unwrap().conf;
         match config.apps.get(&name) {
-            Some(new) => if !old.equal(&**new) { stop_app(state, &name) },
-            None => stop_app(state, &name)
+            Some(new) => {
+                if !old.equal(&**new) {
+                    stop_app(state, &name)
+                }
+            }
+            None => stop_app(state, &name),
         }
     }
     // Start new apps.
@@ -176,41 +221,67 @@ pub fn configure(config: &config::Config) {
 // Insert new app instance into network.
 fn start_app(state: &mut EngineState, name: &str, conf: &dyn AppArg) {
     let conf = conf.box_clone();
-    state.app_table.insert(name.to_string(),
-                           AppState { app: conf.new(),
-                                      conf: conf,
-                                      input: HashMap::new(),
-                                      output: HashMap::new() });
+    state.app_table.insert(
+        name.to_string(),
+        AppState {
+            app: conf.new(),
+            conf,
+            input: HashMap::new(),
+            output: HashMap::new(),
+        },
+    );
 }
 
 // Remove app instance from network.
-fn stop_app (state: &mut EngineState, name: &str) {
+fn stop_app(state: &mut EngineState, name: &str) {
     let removed = state.app_table.remove(name).unwrap();
-    if removed.app.has_stop() { removed.app.stop(); }
+    if removed.app.has_stop() {
+        removed.app.stop();
+    }
 }
 
 // Allocate a fresh shared link.
-fn new_shared_link() -> SharedLink { Rc::new(RefCell::new(link::new())) }
+fn new_shared_link() -> SharedLink {
+    Rc::new(RefCell::new(link::new()))
+}
 
 // Link two apps in the network.
 fn link_apps(state: &mut EngineState, spec: &str) {
-    let link = state.link_table.entry(spec.to_string())
+    let link = state
+        .link_table
+        .entry(spec.to_string())
         .or_insert_with(new_shared_link);
     let spec = config::parse_link(spec);
-    state.app_table.get_mut(&spec.from).unwrap()
-        .output.insert(spec.output, link.clone());
-    state.app_table.get_mut(&spec.to).unwrap()
-        .input.insert(spec.input, link.clone());
+    state
+        .app_table
+        .get_mut(&spec.from)
+        .unwrap()
+        .output
+        .insert(spec.output, link.clone());
+    state
+        .app_table
+        .get_mut(&spec.to)
+        .unwrap()
+        .input
+        .insert(spec.input, link.clone());
 }
 
 // Remove link between two apps.
 fn unlink_apps(state: &mut EngineState, spec: &str) {
     state.link_table.remove(spec);
     let spec = config::parse_link(spec);
-    state.app_table.get_mut(&spec.from).unwrap()
-        .output.remove(&spec.output);
-    state.app_table.get_mut(&spec.to).unwrap()
-        .input.remove(&spec.input);
+    state
+        .app_table
+        .get_mut(&spec.from)
+        .unwrap()
+        .output
+        .remove(&spec.output);
+    state
+        .app_table
+        .get_mut(&spec.to)
+        .unwrap()
+        .input
+        .remove(&spec.input);
 }
 
 // Compute engine breathe order
@@ -228,7 +299,10 @@ fn compute_breathe_order(state: &mut EngineState) {
     let mut successors: HashMap<String, HashSet<String>> = HashMap::new();
     for link in state.link_table.keys() {
         let spec = config::parse_link(&link);
-        successors.entry(spec.from).or_insert(HashSet::new()).insert(spec.to);
+        successors
+            .entry(spec.from)
+            .or_insert_with(HashSet::new)
+            .insert(spec.to);
     }
     // Put pull apps in inhalers
     for (name, app) in state.app_table.iter() {
@@ -251,18 +325,20 @@ fn compute_breathe_order(state: &mut EngineState) {
         }
     }
     // Remove processed successors (resolved dependencies)
-    for name in &state.inhale { successors.remove(name); }
+    for name in &state.inhale {
+        successors.remove(name);
+    }
     // Compute sorted push order
-    while dependents.len() > 0 {
+    while !dependents.is_empty() {
         // Attempt to delay dependents after their inputs, but break cycles by
         // selecting at least one dependent.
         let mut selected = HashSet::new();
         for name in dependents.clone() {
             if let Some(successors) = successors.get(&name) {
                 for successor in successors.iter() {
-                    if !selected.contains(successor) &&
-                        dependents.contains(successor) &&
-                        dependents.len() > 1
+                    if !selected.contains(successor)
+                        && dependents.contains(successor)
+                        && dependents.len() > 1
                     {
                         selected.insert(name.to_string());
                         dependents.retain(|name| name != successor);
@@ -280,9 +356,9 @@ fn compute_breathe_order(state: &mut EngineState) {
             if let Some(successors) = successors.get(name) {
                 for successor in successors.iter() {
                     let app = state.app_table.get(successor).unwrap();
-                    if app.app.has_push() && 
-                        !state.exhale.contains(successor) && 
-                        !dependents.contains(successor)
+                    if app.app.has_push()
+                        && !state.exhale.contains(successor)
+                        && !dependents.contains(successor)
                     {
                         dependents.push(successor.to_string());
                     }
@@ -290,7 +366,9 @@ fn compute_breathe_order(state: &mut EngineState) {
             }
         }
         // Remove processed successors (resolved dependencies)
-        for name in &exhaled { successors.remove(name); }
+        for name in &exhaled {
+            successors.remove(name);
+        }
     }
 }
 
@@ -298,26 +376,41 @@ fn compute_breathe_order(state: &mut EngineState) {
 pub fn main(options: Option<Options>) {
     let options = match options {
         Some(options) => options,
-        None => Options{..Default::default()}
+        None => Options {
+            ..Default::default()
+        },
     };
     let mut done = options.done;
     if let Some(duration) = options.duration {
-        if done.is_some() { panic!("You can not have both 'duration' and 'done'"); }
+        if done.is_some() {
+            panic!("You can not have both 'duration' and 'done'");
+        }
         done = Some(timeout(duration));
     }
 
     breathe();
-    while match &done { Some(done) => !done(), None => true } {
+    while match &done {
+        Some(done) => !done(),
+        None => true,
+    } {
         pace_breathing();
         breathe();
     }
     if !options.no_report {
-        if options.report_load  { report_load(); }
-        if options.report_links { report_links(); }
-        if options.report_apps  { report_apps(); }
+        if options.report_load {
+            report_load();
+        }
+        if options.report_links {
+            report_links();
+        }
+        if options.report_apps {
+            report_apps();
+        }
     }
 
-    unsafe { MONOTONIC_NOW = None; }
+    unsafe {
+        MONOTONIC_NOW = None;
+    }
 }
 
 // Engine breathe loop Options
@@ -335,7 +428,7 @@ pub struct Options {
     pub no_report: bool,
     pub report_load: bool,
     pub report_links: bool,
-    pub report_apps: bool
+    pub report_apps: bool,
 }
 
 // Return current monotonic time.
@@ -344,7 +437,7 @@ static mut MONOTONIC_NOW: Option<Instant> = None;
 pub fn now() -> Instant {
     match unsafe { MONOTONIC_NOW } {
         Some(instant) => instant,
-        None => Instant::now()
+        None => Instant::now(),
     }
 }
 
@@ -360,13 +453,21 @@ pub fn timeout(duration: Duration) -> Box<dyn Fn() -> bool> {
 // The throttle returns true at most once in any <duration> time interval.
 pub fn throttle(duration: Duration) -> Box<dyn FnMut() -> bool> {
     let mut deadline = now();
-    Box::new(move || if now() > deadline { deadline = now() + duration; true }
-                     else                { false })
+    Box::new(move || {
+        if now() > deadline {
+            deadline = now() + duration;
+            true
+        } else {
+            false
+        }
+    })
 }
 
 // Perform a single breath (inhale / exhale)
 fn breathe() {
-    unsafe { MONOTONIC_NOW = Some(Instant::now()); }
+    unsafe {
+        MONOTONIC_NOW = Some(Instant::now());
+    }
     for name in &state().inhale {
         let app = state().app_table.get(name).unwrap();
         app.app.pull(&app);
@@ -375,7 +476,9 @@ fn breathe() {
         let app = state().app_table.get(name).unwrap();
         app.app.push(&app);
     }
-    unsafe { STATS.breaths += 1; }
+    unsafe {
+        STATS.breaths += 1;
+    }
 }
 
 // Breathing regluation to reduce CPU usage when idle by calling sleep.
@@ -425,15 +528,21 @@ pub fn report_load() {
             let newbreaths = breaths - REPORTEDBREATHS;
             let fps = (newfrees as f64 / interval) as u64;
             let fbps = newbits as f64 / interval;
-            let fpb = if newbreaths > 0 { newfrees / newbreaths } else { 0 };
+            let fpb = if newbreaths > 0 {
+                newfrees / newbreaths
+            } else {
+                0
+            };
             let bpp = if newfrees > 0 { newbytes / newfrees } else { 0 };
-            println!("load: time: {:.2} fps: {} fpGbps: {:.3} fpb: {} bpp: {} sleep: {}",
-                     interval,
-                     lib::comma_value(fps),
-                     fbps / 1e9,
-                     lib::comma_value(fpb),
-                     lib::comma_value(bpp),
-                     SLEEP);
+            println!(
+                "load: time: {:.2} fps: {} fpGbps: {:.3} fpb: {} bpp: {} sleep: {}",
+                interval,
+                lib::comma_value(fps),
+                fbps / 1e9,
+                lib::comma_value(fpb),
+                lib::comma_value(bpp),
+                SLEEP
+            );
         }
         LASTLOADREPORT = Some(now());
         REPORTEDFREES = frees;
@@ -452,10 +561,12 @@ pub fn report_links() {
         let link = state().link_table.get(name).unwrap().borrow();
         let txpackets = link.txpackets;
         let txdrop = link.txdrop;
-        println!("  {} sent on {} (loss rate: {}%)",
-                 lib::comma_value(txpackets),
-                 name,
-                 loss_rate(txdrop, txpackets));
+        println!(
+            "  {} sent on {} (loss rate: {}%)",
+            lib::comma_value(txpackets),
+            name,
+            loss_rate(txdrop, txpackets)
+        );
     }
 }
 
@@ -463,55 +574,65 @@ pub fn report_links() {
 pub fn report_apps() {
     for (name, app) in state().app_table.iter() {
         println!("App report for {}:", name);
-        match app.input.len()
-        { 0 => (),
-          1 => println!("  receiving from one input link"),
-          n => println!("  receiving from {} input links", n) }
-        match app.output.len()
-        { 0 => (),
-          1 => println!("  transmitting to one output link"),
-          n => println!("  transmitting to {} output links", n) }
-        if app.app.has_report() { app.app.report(); }
+        match app.input.len() {
+            0 => (),
+            1 => println!("  receiving from one input link"),
+            n => println!("  receiving from {} input links", n),
+        }
+        match app.output.len() {
+            0 => (),
+            1 => println!("  transmitting to one output link"),
+            n => println!("  transmitting to {} output links", n),
+        }
+        if app.app.has_report() {
+            app.app.report();
+        }
     }
 }
 
 fn loss_rate(drop: u64, sent: u64) -> u64 {
-    if sent == 0 { return 0; }
+    if sent == 0 {
+        return 0;
+    }
     drop * 100 / (drop + sent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
     use crate::basic_apps;
+    use crate::config;
 
     #[test]
     fn engine() {
         let mut c = config::new();
-        config::app(&mut c, "source", &basic_apps::Source {size: 60});
+        config::app(&mut c, "source", &basic_apps::Source { size: 60 });
         config::app(&mut c, "sink", &basic_apps::Sink {});
         config::link(&mut c, "source.output -> sink.input");
         configure(&c);
         println!("Configured the app network: source(60).output -> sink.input");
-        main(Some(Options{
-            duration: Some(Duration::new(0,0)),
-            report_load: true, report_links: true,
+        main(Some(Options {
+            duration: Some(Duration::new(0, 0)),
+            report_load: true,
+            report_links: true,
             ..Default::default()
         }));
         let mut c = c.clone();
-        config::app(&mut c, "source", &basic_apps::Source {size: 120});
+        config::app(&mut c, "source", &basic_apps::Source { size: 120 });
         configure(&c);
         println!("Cloned, mutated, and applied new configuration:");
         println!("source(120).output -> sink.input");
-        main(Some(Options{
+        main(Some(Options {
             done: Some(Box::new(|| true)),
-            report_load: true, report_links: true,
+            report_load: true,
+            report_links: true,
             ..Default::default()
         }));
         let stats = stats();
-        println!("engine: frees={} freebytes={} freebits={}",
-                 stats.frees, stats.freebytes, stats.freebits);
+        println!(
+            "engine: frees={} freebytes={} freebits={}",
+            stats.frees, stats.freebytes, stats.freebits
+        );
     }
 
     #[test]
@@ -528,8 +649,12 @@ mod tests {
         config::link(&mut c, "d_t3.output -> b_t1.input2");
         configure(&c);
         report_links();
-        for name in &state().inhale { println!("pull {}", &name); }
-        for name in &state().exhale { println!("push {}", &name); }
+        for name in &state().inhale {
+            println!("pull {}", &name);
+        }
+        for name in &state().exhale {
+            println!("push {}", &name);
+        }
         println!("Case 2:");
         let mut c = config::new();
         config::app(&mut c, "a_io1", &PseudoIO {});
@@ -542,8 +667,12 @@ mod tests {
         config::link(&mut c, "c_t2.output -> d_t3.input2");
         configure(&c);
         report_links();
-        for name in &state().inhale { println!("pull {}", &name); }
-        for name in &state().exhale { println!("push {}", &name); }
+        for name in &state().inhale {
+            println!("pull {}", &name);
+        }
+        for name in &state().exhale {
+            println!("push {}", &name);
+        }
         println!("Case 3:");
         let mut c = config::new();
         config::app(&mut c, "a_io1", &PseudoIO {});
@@ -556,19 +685,28 @@ mod tests {
         config::link(&mut c, "c_t2.output -> a_io1.input2");
         configure(&c);
         report_links();
-        for name in &state().inhale { println!("pull {}", &name); }
-        for name in &state().exhale { println!("push {}", &name); }
+        for name in &state().inhale {
+            println!("pull {}", &name);
+        }
+        for name in &state().exhale {
+            println!("push {}", &name);
+        }
     }
 
-    #[derive(Clone,Debug)]
+    #[derive(Clone, Debug)]
     pub struct PseudoIO {}
     impl AppConfig for PseudoIO {
-        fn new(&self) -> Box<dyn App> { Box::new(PseudoIOApp {}) }
+        fn new(&self) -> Box<dyn App> {
+            Box::new(PseudoIOApp {})
+        }
     }
     pub struct PseudoIOApp {}
     impl App for PseudoIOApp {
-        fn has_pull(&self) -> bool { true }
-        fn has_push(&self) -> bool { true }
+        fn has_pull(&self) -> bool {
+            true
+        }
+        fn has_push(&self) -> bool {
+            true
+        }
     }
-
 }

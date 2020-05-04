@@ -1,20 +1,27 @@
-use super::packet;
-use super::link;
 use super::engine;
 use super::lib;
+use super::link;
+use super::packet;
 
 // Source app: generate synthetic packets
 
-#[derive(Clone,Debug)]
-pub struct Source { pub size: u16 }
+#[derive(Clone, Debug)]
+pub struct Source {
+    pub size: u16,
+}
 impl engine::AppConfig for Source {
+    #[allow(clippy::new_ret_no_self)]
     fn new(&self) -> Box<dyn engine::App> {
-        Box::new(SourceApp {size: self.size})
+        Box::new(SourceApp { size: self.size })
     }
 }
-pub struct SourceApp { size: u16 }
+pub struct SourceApp {
+    size: u16,
+}
 impl engine::App for SourceApp {
-    fn has_pull(&self) -> bool { true }
+    fn has_pull(&self) -> bool {
+        true
+    }
     fn pull(&self, app: &engine::AppState) {
         for output in app.output.values() {
             let mut output = output.borrow_mut();
@@ -30,16 +37,19 @@ impl engine::App for SourceApp {
 
 // Sink app: Receive and discard packets
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Sink {}
 impl engine::AppConfig for Sink {
+    #[allow(clippy::new_ret_no_self)]
     fn new(&self) -> Box<dyn engine::App> {
         Box::new(SinkApp {})
     }
 }
 pub struct SinkApp {}
 impl engine::App for SinkApp {
-    fn has_push(&self) -> bool { true }
+    fn has_push(&self) -> bool {
+        true
+    }
     fn push(&self, app: &engine::AppState) {
         for input in app.input.values() {
             let mut input = input.borrow_mut();
@@ -52,16 +62,19 @@ impl engine::App for SinkApp {
 
 // Tee app: Send inputs to all outputs
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Tee {}
 impl engine::AppConfig for Tee {
+    #[allow(clippy::new_ret_no_self)]
     fn new(&self) -> Box<dyn engine::App> {
         Box::new(TeeApp {})
     }
 }
 pub struct TeeApp {}
 impl engine::App for TeeApp {
-    fn has_push(&self) -> bool { true }
+    fn has_push(&self) -> bool {
+        true
+    }
     fn push(&self, app: &engine::AppState) {
         //let noutputs = app.output.len();
         for input in app.input.values() {

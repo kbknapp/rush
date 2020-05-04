@@ -6,9 +6,9 @@
 
 use super::lib;
 
-use std::ffi;
-use regex::Regex;
 use once_cell::unsync::Lazy;
+use regex::Regex;
+use std::ffi;
 
 // Serve small allocations from hugepage "chunks"
 
@@ -17,15 +17,17 @@ use once_cell::unsync::Lazy;
 struct Chunk {
     pointer: u64,
     size: usize,
-    used: usize
+    used: usize,
 }
-static mut CHUNKS: Lazy<Vec<Chunk>> = Lazy::new(|| Vec::new());
+static mut CHUNKS: Lazy<Vec<Chunk>> = Lazy::new(Vec::new);
 
 // Allocate DMA-friendly memory. Return virtual memory pointer.
-pub fn dma_alloc(bytes: usize,  align: usize) -> *mut u8 {
+pub fn dma_alloc(bytes: usize, align: usize) -> *mut u8 {
     assert!(bytes <= huge_page_size());
     // Get current chunk of memory to allocate from
-    if unsafe { CHUNKS.len() } == 0 { allocate_next_chunk() }
+    if unsafe { CHUNKS.len() } == 0 {
+        allocate_next_chunk()
+    }
     let mut chunk = unsafe { CHUNKS.last_mut().unwrap() };
     // Skip allocation forward pointer to suit alignment
     chunk.used = lib::align(chunk.used, align);
@@ -36,43 +38,53 @@ pub fn dma_alloc(bytes: usize,  align: usize) -> *mut u8 {
     }
     // Slice out the memory we need
     let offset = chunk.used;
-    chunk.used = chunk.used + bytes;
+    chunk.used += bytes;
     (chunk.pointer + (offset as u64)) as *mut u8
 }
 
 // Add a new chunk.
 fn allocate_next_chunk() {
     let ptr = allocate_hugetlb_chunk();
-    let chunk = Chunk { pointer: ptr as u64,
-                        size: huge_page_size(),
-                        used: 0 };
-    unsafe { CHUNKS.push(chunk); }
+    let chunk = Chunk {
+        pointer: ptr as u64,
+        size: huge_page_size(),
+        used: 0,
+    };
+    unsafe {
+        CHUNKS.push(chunk);
+    }
 }
 
 // HugeTLB: Allocate contiguous memory in bulk from Linux
 
 fn allocate_hugetlb_chunk() -> *mut ffi::c_void {
-    if let Ok(ptr) = std::panic::catch_unwind(|| {
-        allocate_huge_page(huge_page_size())
-    }) { ptr } else { panic!("Failed to allocate a huge page for DMA"); }
+    if let Ok(ptr) = std::panic::catch_unwind(|| allocate_huge_page(huge_page_size())) {
+        ptr
+    } else {
+        panic!("Failed to allocate a huge page for DMA");
+    }
 }
 
 // Huge page size in bytes
 static mut HUGE_PAGE_SIZE: Option<usize> = None;
-fn huge_page_size () -> usize {
+fn huge_page_size() -> usize {
     match unsafe { HUGE_PAGE_SIZE } {
         Some(size) => size,
-        None => unsafe { HUGE_PAGE_SIZE = Some(get_huge_page_size());
-                         HUGE_PAGE_SIZE.unwrap() }
+        None => unsafe {
+            HUGE_PAGE_SIZE = Some(get_huge_page_size());
+            HUGE_PAGE_SIZE.unwrap()
+        },
     }
 }
 
-fn get_huge_page_size () -> usize {
+fn get_huge_page_size() -> usize {
     let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap();
     let re = Regex::new(r"Hugepagesize: +([0-9]+) kB").unwrap();
     if let Some(cap) = re.captures(&meminfo) {
         (&cap[1]).parse::<usize>().unwrap() * 1024
-    } else { panic!("Failed to get hugepage size"); }
+    } else {
+        panic!("Failed to get hugepage size");
+    }
 }
 
 // Physical memory allocation
@@ -94,9 +106,11 @@ const TAG: u64 = 0x500000000000;
 // Return the physical address of specially mapped DMA memory.
 pub fn virtual_to_physical(virt_addr: *const u8) -> u64 {
     let virt_addr = virt_addr as u64;
-    assert!(virt_addr & 0x500000000000 == 0x500000000000,
-            "Invalid DMA address: 0x{:x}\nDMA address tag check failed",
-            virt_addr);
+    assert!(
+        virt_addr & 0x500000000000 == 0x500000000000,
+        "Invalid DMA address: 0x{:x}\nDMA address tag check failed",
+        virt_addr
+    );
     virt_addr ^ 0x500000000000
 }
 
@@ -113,21 +127,30 @@ pub fn virtual_to_physical(virt_addr: *const u8) -> u64 {
 fn allocate_huge_page(size: usize) -> *mut ffi::c_void {
     ensure_hugetlbfs();
     unsafe {
-        let tmpfile = cstr(&format!("/var/run/rush/hugetlbfs/alloc.{}",
-                                    libc::getpid()));
-        let fd = libc::open(tmpfile.as_ptr(), libc::O_CREAT|libc::O_RDWR, 0o700);
+        let tmpfile = cstr(&format!("/var/run/rush/hugetlbfs/alloc.{}", libc::getpid()));
+        let fd = libc::open(tmpfile.as_ptr(), libc::O_CREAT | libc::O_RDWR, 0o700);
         assert!(fd >= 0, "create hugetlb");
         assert!(libc::ftruncate(fd, size as i64) == 0, "ftruncate");
-        let tmpptr = libc::mmap(std::ptr::null_mut(), size,
-                                libc::PROT_READ | libc::PROT_WRITE,
-                                libc::MAP_SHARED, fd, 0);
+        let tmpptr = libc::mmap(
+            std::ptr::null_mut(),
+            size,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            fd,
+            0,
+        );
         assert!(tmpptr != libc::MAP_FAILED, "mmap hugetlb");
         assert!(libc::mlock(tmpptr, size) == 0, "mlock");
         let phys = resolve_physical(tmpptr);
         let virt = phys | TAG;
-        let ptr = libc::mmap(virt as *mut ffi::c_void, size,
-                             libc::PROT_READ | libc::PROT_WRITE,
-                             libc::MAP_SHARED | libc::MAP_FIXED, fd, 0);
+        let ptr = libc::mmap(
+            virt as *mut ffi::c_void,
+            size,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED | libc::MAP_FIXED,
+            fd,
+            0,
+        );
         libc::unlink(tmpfile.as_ptr());
         libc::munmap(tmpptr, size);
         libc::close(fd);
@@ -145,12 +168,25 @@ fn ensure_hugetlbfs() {
     unsafe {
         libc::mkdir(cstr("/var/run/rush").as_ptr(), 0o755);
         libc::mkdir(target.as_ptr(), 0o755);
-        if libc::mount(source.as_ptr(), target.as_ptr(), fstype.as_ptr(),
-                       flags | libc::MS_REMOUNT, std::ptr::null_mut()) != 0 {
+        if libc::mount(
+            source.as_ptr(),
+            target.as_ptr(),
+            fstype.as_ptr(),
+            flags | libc::MS_REMOUNT,
+            std::ptr::null_mut(),
+        ) != 0
+        {
             println!("[mounting /var/run/rush/hugetlbfs]");
-            assert!(libc::mount(source.as_ptr(), target.as_ptr(), fstype.as_ptr(),
-                                flags, std::ptr::null_mut()) == 0,
-                    "failed to (re)mount /var/run/rush/hugetlbfs");
+            assert!(
+                libc::mount(
+                    source.as_ptr(),
+                    target.as_ptr(),
+                    fstype.as_ptr(),
+                    flags,
+                    std::ptr::null_mut()
+                ) == 0,
+                "failed to (re)mount /var/run/rush/hugetlbfs"
+            );
         }
     }
 }
@@ -168,7 +204,7 @@ fn resolve_physical(ptr: *const ffi::c_void) -> u64 {
         let mut data: [u64; 1] = [0];
         assert!(libc::pread(pagemapfd, cptr(&mut data), 8, virtpage as i64 * 8) == 8);
         libc::close(pagemapfd);
-        assert!(data[0] & (1<<63) != 0, "page not present");
+        assert!(data[0] & (1 << 63) != 0, "page not present");
         let physpage = data[0] & 0xFFFFFFFFFFFFF;
         physpage * pagesize
     }
