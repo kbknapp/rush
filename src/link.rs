@@ -106,7 +106,7 @@ mod selftest {
         let mut r = new();
         println!("Allocated a link of capacity {}", LINK_MAX_PACKETS);
         let to_transmit = 2000;
-        if full(&r) { panic!("Link should be empty."); }
+        assert!(!full(&r), "Link should be empty.");
         for n in 1..=to_transmit {
             let mut p = packet::allocate();
             p.length = n;
@@ -117,12 +117,15 @@ mod selftest {
             //transmit(&mut r, p); // Would cause compile error
         }
         println!("Transmitted {} packets", to_transmit);
-        if empty(&r) || !full(&r) { panic!("Link should be full."); }
+        assert!(full(&r), "Link should be full.");
         let mut n = 0;
         while !empty(&r) {
             n += 1;
             let p = receive(&mut r);
-            if p.length != n as u16 || p.data[n-1] != 42 { panic!("Corrupt packet!"); }
+            assert!(
+                p.length == n as u16 || p.data[n - 1] == 42,
+                "Corrupt packet!"
+            );
             packet::free(p);
         }
         //receive(&mut r); // Would cause link underflow panic.

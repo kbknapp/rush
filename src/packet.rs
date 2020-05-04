@@ -120,9 +120,11 @@ pub fn allocate() -> Box<Packet> {
 // attempt to Drop it will trigger a panic (see Packet). Hence we ensure that
 // all allocated packets are eventually freed.
 fn free_internal(mut p: Box<Packet>) {
-    if unsafe { FL.nfree } == MAX_PACKETS {
-        panic!("Packet freelist overflow");
-    }
+    assert!(
+        unsafe { FL.nfree } != MAX_PACKETS,
+        "Packet freelist overflow"
+    );
+
     p.length = 0;
     unsafe {
         FL.list[FL.nfree] = &mut *p;

@@ -58,11 +58,8 @@ fn allocate_next_chunk() {
 // HugeTLB: Allocate contiguous memory in bulk from Linux
 
 fn allocate_hugetlb_chunk() -> *mut ffi::c_void {
-    if let Ok(ptr) = std::panic::catch_unwind(|| allocate_huge_page(huge_page_size())) {
-        ptr
-    } else {
-        panic!("Failed to allocate a huge page for DMA");
-    }
+    std::panic::catch_unwind(|| allocate_huge_page(huge_page_size()))
+        .expect("Failed to allocate a huge page for DMA")
 }
 
 // Huge page size in bytes
@@ -80,11 +77,8 @@ fn huge_page_size() -> usize {
 fn get_huge_page_size() -> usize {
     let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap();
     let re = Regex::new(r"Hugepagesize: +([0-9]+) kB").unwrap();
-    if let Some(cap) = re.captures(&meminfo) {
-        (&cap[1]).parse::<usize>().unwrap() * 1024
-    } else {
-        panic!("Failed to get hugepage size");
-    }
+    let cap = re.captures(&meminfo).expect("Failed to get hugepage size");
+    (&cap[1]).parse::<usize>().unwrap() * 1024
 }
 
 // Physical memory allocation

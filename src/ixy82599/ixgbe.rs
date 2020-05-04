@@ -180,9 +180,10 @@ impl IxyDevice for IxgbeDevice {
                     break;
                 }
 
-                if (status & IXGBE_RXDADV_STAT_EOP) == 0 {
-                    panic!("increase buffer size or decrease MTU")
-                }
+                assert!(
+                    (status & IXGBE_RXDADV_STAT_EOP) != 0,
+                    "increase buffer size or decrease MTU"
+                );
 
                 // get next packet
                 let mut p = unsafe { Box::from_raw(queue.bufs_in_use[rx_index]) };

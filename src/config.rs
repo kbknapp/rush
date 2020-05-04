@@ -53,13 +53,14 @@ pub fn link(config: &mut Config, spec: &str) {
 // Given "a.out -> b.in" return
 //   LinkSpec { from: "a", output:"out", to: "b", input: "in" }.
 pub fn parse_link(spec: &str) -> LinkSpec {
-    if let Some(cap) = LINK_SYNTAX.captures(spec) {
-        LinkSpec {
-            from: (&cap[1]).to_string(), output: (&cap[2]).to_string(),
-            to: (&cap[3]).to_string(), input: (&cap[4]).to_string(),
-        }
-    } else {
-        panic!("link parse error: {}", spec)
+    let cap = LINK_SYNTAX
+        .captures(spec)
+        .expect(&*format!("link parse error: {}", spec));
+    LinkSpec {
+        from: (&cap[1]).to_string(),
+        output: (&cap[2]).to_string(),
+        to: (&cap[3]).to_string(),
+        input: (&cap[4]).to_string(),
     }
 }
 
