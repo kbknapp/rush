@@ -109,25 +109,25 @@ pub trait App {
         false
     }
     fn pull(&self, _app: &AppState) {
-        panic!("Pull called but not implemented");
+        unimplemented!();
     }
     fn has_push(&self) -> bool {
         false
     }
     fn push(&self, _app: &AppState) {
-        panic!("Push called but not implemented");
+        unimplemented!();
     }
     fn has_report(&self) -> bool {
         false
     }
     fn report(&self) {
-        panic!("Report called but not implemented");
+        unimplemented!();
     }
     fn has_stop(&self) -> bool {
         false
     }
     fn stop(&self) {
-        panic!("Stop called but not implemented");
+        unimplemented!();
     }
 }
 // Recommended number of packets to inhale in pull()
